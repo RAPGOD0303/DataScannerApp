@@ -15,10 +15,8 @@ import TextRecognition from "@react-native-ml-kit/text-recognition";
  
 /* ---------------------- PATHS ---------------------- */
 const CSV_FILENAME = "aadhar_scans.csv";
-const CSV_PATH =
-  Platform.OS === "android"
-    ? `${RNFS.ExternalDirectoryPath}/${CSV_FILENAME}`
-    : `${RNFS.DocumentDirectoryPath}/${CSV_FILENAME}`;
+const APP_PATH = `${RNFS.DocumentDirectoryPath}/${CSV_FILENAME}`; // internal storage
+const DOWNLOAD_PATH = `${RNFS.DownloadDirectoryPath}/${CSV_FILENAME}`; // Downloads folder
  
 /* ---------------------- PERMISSIONS ---------------------- */
 async function requestCameraPermission() {
@@ -47,35 +45,29 @@ async function requestStoragePermission() {
       }
     );
     return r === PermissionsAndroid.RESULTS.GRANTED;
-  } else if (Platform.Version <= 29) {
-    const read = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      {
-        title: "Storage Permission",
-        message: "App needs permission to read images.",
-        buttonPositive: "OK",
-      }
-    );
-    const write = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      {
-        title: "Storage Permission",
-        message: "App needs permission to write CSV.",
-        buttonPositive: "OK",
-      }
-    );
-    return read === PermissionsAndroid.RESULTS.GRANTED && write === PermissionsAndroid.RESULTS.GRANTED;
-  } else {
-    const read = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      {
-        title: "Storage Permission",
-        message: "App needs permission to read images.",
-        buttonPositive: "OK",
-      }
-    );
-    return read === PermissionsAndroid.RESULTS.GRANTED;
   }
+ 
+  const read = await PermissionsAndroid.request(
+    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+    {
+      title: "Storage Permission",
+      message: "App needs permission to read images.",
+      buttonPositive: "OK",
+    }
+  );
+  const write =
+    Platform.Version <= 29
+      ? await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+          {
+            title: "Storage Permission",
+            message: "App needs permission to write CSV.",
+            buttonPositive: "OK",
+          }
+        )
+      : true;
+ 
+  return read === PermissionsAndroid.RESULTS.GRANTED && write === true;
 }
  
 async function requestAllPermissions() {
@@ -148,17 +140,32 @@ async function appendToCSV(rowObj) {
     `"${(rowObj.dob || "")}","${(rowObj.rawText || "").replace(/"/g, '""')}"\n`;
  
   try {
-    const exists = await RNFS.exists(CSV_PATH);
-    if (!exists) {
-      await RNFS.writeFile(CSV_PATH, header + line, "utf8");
-    } else {
-      await RNFS.appendFile(CSV_PATH, line, "utf8");
-    }
-    console.log("CSV saved at:", CSV_PATH);
-    return CSV_PATH;
+    const exists = await RNFS.exists(APP_PATH);
+    if (!exists) await RNFS.writeFile(APP_PATH, header + line, "utf8");
+    else await RNFS.appendFile(APP_PATH, line, "utf8");
+    console.log("CSV saved at:", APP_PATH);
+    return APP_PATH;
   } catch (err) {
     console.error("appendToCSV error:", err);
+    Alert.alert("Write Error", "Failed to save CSV.");
     throw err;
+  }
+}
+ 
+/* ---------------------- MOVE CSV TO DOWNLOADS ---------------------- */
+async function moveCSVToDownloads() {
+  try {
+    const exists = await RNFS.exists(APP_PATH);
+    if (!exists) {
+      Alert.alert("Not Found", "No CSV found in app storage.");
+      return;
+    }
+    await RNFS.copyFile(APP_PATH, DOWNLOAD_PATH);
+    Alert.alert("Success", `CSV moved to Downloads:\n${DOWNLOAD_PATH}`);
+    console.log("CSV moved to:", DOWNLOAD_PATH);
+  } catch (err) {
+    console.error("moveCSVToDownloads error:", err);
+    Alert.alert("Error", "Failed to move CSV file.");
   }
 }
  
@@ -186,7 +193,7 @@ export default function AadharScanner() {
  
       const csvPath = await appendToCSV(row);
       setLastScan({ parsed, csvPath });
-      Alert.alert("Saved", `Parsed and saved to CSV at:\n${csvPath}`);
+      Alert.alert("Saved", `Parsed and saved to CSV:\n${csvPath}`);
     } catch (err) {
       console.error("processImage error:", err);
       Alert.alert("Error", err.message || "Unknown error processing image");
@@ -220,6 +227,8 @@ export default function AadharScanner() {
       <Button title="📷 Capture Aadhaar (Camera)" onPress={handleCapture} />
       <View style={{ height: 10 }} />
       <Button title="🖼 Pick Aadhaar Image" onPress={handlePickImage} />
+      <View style={{ height: 10 }} />
+      <Button title="🗂 Add to CSV" onPress={moveCSVToDownloads} />
       <View style={{ height: 20 }} />
       {lastScan ? (
         <View>
