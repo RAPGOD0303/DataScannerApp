@@ -23,7 +23,6 @@ import SQLite from "react-native-sqlite-storage";
 // 🔹 DATABASE CONFIGURATION
 // =====================================================
 const DB_NAME = "AadharDB.db";
-const DB_PATH = `${RNFS.DocumentDirectoryPath}/${DB_NAME}`;
 const db = SQLite.openDatabase(
   { name: DB_NAME, location: "default" },
   () => console.log("✅ Database opened successfully"),
@@ -130,7 +129,7 @@ function parseAadhaarText(fullText) {
   const mobileMatch = cleanText.match(/\b[6-9]\d{9}\b/);
   if (mobileMatch) result.mobile = mobileMatch[0];
 
-  // Name: first line with alphabets, not containing keywords
+  // Name
   for (let line of lines) {
     if (/^[A-Za-z ]+$/.test(line) && !/DOB|Year|Gender|Address|Father|Mother|Wife|Husband/i.test(line)) {
       result.name = line.trim();
@@ -139,6 +138,34 @@ function parseAadhaarText(fullText) {
   }
 
   return result;
+}
+
+// =====================================================
+// 🔹 UTILITIES
+// =====================================================
+function getIndianTimestamp() {
+  const date = new Date();
+  const istTime = new Date(date.getTime() + 5.5 * 60 * 60 * 1000);
+  const formatted = istTime.toISOString().slice(0, 19).replace("T", " ");
+  return formatted;
+}
+
+function formatDisplayDate(dateString) {
+  if (!dateString) return "N/A";
+  try {
+    const date = new Date(dateString.replace(" ", "T"));
+    const options = {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    };
+    return date.toLocaleString("en-IN", options).replace(",", "");
+  } catch (e) {
+    return dateString;
+  }
 }
 
 // =====================================================
@@ -199,13 +226,31 @@ export default function AadharScanner() {
     if (asset?.uri) await processImage(asset.uri);
   }
 
+  // ------------------ VALIDATIONS ------------------
+  function validateInputs() {
+    const { name, aadhaar_number, dob, gender, mobile } = form;
+
+    if (!name.trim()) return "Please enter a valid name.";
+    if (!aadhaar_number.match(/^\d{12}$/)) return "Aadhaar number must be 12 digits.";
+    if (dob && !dob.match(/^\d{2}[\/-]\d{2}[\/-]\d{4}$/))
+      return "DOB must be in DD/MM/YYYY or DD-MM-YYYY format.";
+    if (gender && !["Male", "Female", "Other"].includes(gender))
+      return "Gender must be Male, Female, or Other.";
+    if (mobile && !mobile.match(/^[6-9]\d{9}$/)) return "Invalid mobile number.";
+
+    return null;
+  }
+
   // ------------------ SAVE OR UPDATE RECORD ------------------
   function saveToDB() {
-    const { name, aadhaar_number, dob, address, gender, mobile } = form;
-
-    if (!name || !aadhaar_number) {
-      return ToastAndroid.show("⚠️ Aadhaar number and Name required!", ToastAndroid.SHORT);
+    const validationError = validateInputs();
+    if (validationError) {
+      ToastAndroid.show(`⚠️ ${validationError}`, ToastAndroid.SHORT);
+      return;
     }
+
+    const { name, aadhaar_number, dob, address, gender, mobile } = form;
+    const scannedAt = getIndianTimestamp();
 
     db.transaction((tx) => {
       tx.executeSql(
@@ -213,9 +258,9 @@ export default function AadharScanner() {
         (id, name, aadhaar_number, dob, address, gender, mobile, scanned_at)
         VALUES (
           (SELECT id FROM AadharData WHERE aadhaar_number = ?),
-          ?, ?, ?, ?, ?, ?, datetime('now')
+          ?, ?, ?, ?, ?, ?, ?
         )`,
-        [aadhaar_number, name, aadhaar_number, dob, address, gender, mobile],
+        [aadhaar_number, name, aadhaar_number, dob, address, gender, mobile, scannedAt],
         () => {
           ToastAndroid.show("✅ Data saved!", ToastAndroid.SHORT);
           fetchRecords();
@@ -232,7 +277,7 @@ export default function AadharScanner() {
   function fetchRecords() {
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT * FROM AadharData ORDER BY scanned_at DESC`,
+        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) DESC`,
         [],
         (tx, results) => {
           const temp = [];
@@ -240,7 +285,7 @@ export default function AadharScanner() {
             temp.push(results.rows.item(i));
           }
           setRecords(temp);
-          setRecentRecords(temp.slice(0, 3)); // last 3 recently added
+          setRecentRecords(temp.slice(0, 3)); // last 3
         },
         (tx, err) => console.error("DB fetch error:", err)
       );
@@ -282,7 +327,7 @@ export default function AadharScanner() {
           <Button title="💾 Save Data" onPress={saveToDB} />
         </View>
 
-        {/* RECENTLY ADDED SECTION */}
+        {/* RECENTLY ADDED */}
         <Text style={[styles.heading, { marginTop: 20 }]}>🕒 Recently Added</Text>
         {recentRecords.length === 0 ? (
           <Text>No recent records.</Text>
@@ -297,12 +342,15 @@ export default function AadharScanner() {
                 <Text>DOB: {item.dob}</Text>
                 <Text>Gender: {item.gender}</Text>
                 <Text>Mobile: {item.mobile}</Text>
+                <Text style={styles.timestamp}>
+                  Scanned At: {formatDisplayDate(item.scanned_at)}
+                </Text>
               </View>
             )}
           />
         )}
 
-        {/* SAVED RECORDS */}
+        {/* ALL RECORDS */}
         <Text style={[styles.heading, { marginTop: 20 }]}>📄 All Saved Records</Text>
         {records.length === 0 ? (
           <Text>No records yet.</Text>
@@ -318,7 +366,9 @@ export default function AadharScanner() {
                 <Text>Gender: {item.gender}</Text>
                 <Text>Mobile: {item.mobile}</Text>
                 {item.address ? <Text>Address: {item.address}</Text> : null}
-                <Text style={styles.timestamp}>Scanned At: {item.scanned_at}</Text>
+                <Text style={styles.timestamp}>
+                  Scanned At: {formatDisplayDate(item.scanned_at)}
+                </Text>
               </View>
             )}
           />
@@ -332,23 +382,10 @@ export default function AadharScanner() {
 // 🔹 STYLES
 // =====================================================
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#f9f9f9",
-    paddingTop: Platform.OS === "android" ? 30 : 0,
-  },
-  container: {
-    padding: 20,
-    paddingBottom: 80,
-  },
-  heading: {
-    fontWeight: "bold",
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  fieldGroup: {
-    marginTop: 10,
-  },
+  safeArea: { flex: 1, backgroundColor: "#f9f9f9", paddingTop: Platform.OS === "android" ? 30 : 0 },
+  container: { padding: 20, paddingBottom: 80 },
+  heading: { fontWeight: "bold", fontSize: 16, marginBottom: 10 },
+  fieldGroup: { marginTop: 10 },
   input: {
     borderWidth: 1,
     borderColor: "#999",
@@ -357,10 +394,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     backgroundColor: "#fff",
   },
-  buttonGroup: {
-    marginTop: 20,
-    marginBottom: 20,
-  },
+  buttonGroup: { marginTop: 20, marginBottom: 20 },
   record: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -370,8 +404,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   timestamp: {
-    fontSize: 10,
-    color: "#555",
+    fontSize: 12,
+    color: "#007AFF",
     marginTop: 4,
+    fontStyle: "italic",
   },
 });

@@ -1,11 +1,42 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from "react-native";
 import SQLite from "react-native-sqlite-storage";
 
 export default function SavedRecords() {
   const [records, setRecords] = useState([]);
   const [sortAsc, setSortAsc] = useState(false);
   const [dbReady, setDbReady] = useState(false);
+
+  // ------------------ FORMAT DATE & TIME ------------------
+  const formatDateTime = (isoString) => {
+    if (!isoString) return "Unknown";
+
+    try {
+      const dateObj = new Date(isoString);
+
+      if (isNaN(dateObj.getTime())) return isoString;
+
+      const options = {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      };
+
+      return dateObj.toLocaleString("en-IN", options).replace(",", "");
+    } catch (err) {
+      return isoString;
+    }
+  };
 
   // ------------------ OPEN DATABASE ------------------
   useEffect(() => {
@@ -31,12 +62,18 @@ export default function SavedRecords() {
     const db = SQLite.openDatabase({ name: "AadharDB.db", location: "default" });
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${sortAsc ? "ASC" : "DESC"}`,
+        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${
+          sortAsc ? "ASC" : "DESC"
+        }`,
         [],
         (_, results) => {
           const rows = [];
           for (let i = 0; i < results.rows.length; i++) {
-            rows.push(results.rows.item(i));
+            const item = results.rows.item(i);
+            rows.push({
+              ...item,
+              formattedDate: formatDateTime(item.scanned_at),
+            });
           }
           setRecords(rows);
         },
@@ -63,20 +100,25 @@ export default function SavedRecords() {
         data={records}
         keyExtractor={(item) => item.id?.toString() ?? Math.random().toString()}
         renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={[styles.cell, { flex: 1.2 }]}>{item.aadhaar_number}</Text>
-            <Text style={[styles.cell, { flex: 1.5 }]}>{item.name}</Text>
-            <Text style={[styles.cell, { flex: 1.3 }]}>{item.scanned_at}</Text>
+          <View style={styles.card}>
+            <Text style={styles.title}>{item.name}</Text>
+            <Text style={styles.subText}>Aadhaar: {item.aadhaar_number}</Text>
+            <Text style={styles.subText}>
+              DOB: {item.dob || "N/A"} | Gender: {item.gender || "N/A"}
+            </Text>
+            <Text style={styles.address} numberOfLines={2} ellipsizeMode="tail">
+              Address: {item.address || "N/A"}
+            </Text>
+            <Text style={styles.time}>
+              🕒 Scanned At: {item.formattedDate}
+            </Text>
           </View>
         )}
-        ListHeaderComponent={() => (
-          <View style={[styles.row, styles.headerRow]}>
-            <Text style={[styles.cell, styles.headerCell, { flex: 1.2 }]}>Aadhaar</Text>
-            <Text style={[styles.cell, styles.headerCell, { flex: 1.5 }]}>Name</Text>
-            <Text style={[styles.cell, styles.headerCell, { flex: 1.3 }]}>Scanned At</Text>
-          </View>
-        )}
-        ListEmptyComponent={<Text style={{ textAlign: "center" }}>No records found</Text>}
+        ListEmptyComponent={
+          <Text style={{ textAlign: "center", marginTop: 20 }}>
+            No records found
+          </Text>
+        }
       />
     </View>
   );
@@ -93,25 +135,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontWeight: "bold",
   },
-  row: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderColor: "#ccc",
-    paddingVertical: 8,
+  card: {
     backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
   },
-  headerRow: {
-    backgroundColor: "#E9ECEF",
-    borderTopWidth: 1,
-  },
-  headerCell: {
+  title: {
+    fontSize: 15,
     fontWeight: "bold",
     color: "#333",
   },
-  cell: {
-    textAlign: "center",
+  subText: {
     fontSize: 13,
-    color: "#333",
-    paddingHorizontal: 4,
+    color: "#555",
+    marginTop: 2,
+  },
+  address: {
+    fontSize: 13,
+    color: "#444",
+    marginTop: 4,
+  },
+  time: {
+    fontSize: 12,
+    color: "#007AFF",
+    marginTop: 6,
+    fontStyle: "italic",
   },
 });
