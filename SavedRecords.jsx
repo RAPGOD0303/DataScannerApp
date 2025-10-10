@@ -6,8 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
 } from "react-native";
 import SQLite from "react-native-sqlite-storage";
+import RNFS from "react-native-fs";
+import Share from "react-native-share";
 
 export default function SavedRecords() {
   const [records, setRecords] = useState([]);
@@ -17,12 +20,9 @@ export default function SavedRecords() {
   // ------------------ FORMAT DATE & TIME ------------------
   const formatDateTime = (isoString) => {
     if (!isoString) return "Unknown";
-
     try {
       const dateObj = new Date(isoString);
-
       if (isNaN(dateObj.getTime())) return isoString;
-
       const options = {
         day: "2-digit",
         month: "short",
@@ -31,7 +31,6 @@ export default function SavedRecords() {
         minute: "2-digit",
         hour12: true,
       };
-
       return dateObj.toLocaleString("en-IN", options).replace(",", "");
     } catch (err) {
       return isoString;
@@ -42,19 +41,13 @@ export default function SavedRecords() {
   useEffect(() => {
     const db = SQLite.openDatabase(
       { name: "AadharDB.db", location: "default" },
-      () => {
-        console.log("✅ Database opened successfully");
-        setDbReady(true);
-      },
+      () => setDbReady(true),
       (error) => {
         console.error("❌ Failed to open database:", error);
         Alert.alert("Database Error", "Failed to open local database.");
       }
     );
-
-    return () => {
-      db.close();
-    };
+    return () => db.close();
   }, []);
 
   // ------------------ FETCH RECORDS ------------------
@@ -62,9 +55,7 @@ export default function SavedRecords() {
     const db = SQLite.openDatabase({ name: "AadharDB.db", location: "default" });
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${
-          sortAsc ? "ASC" : "DESC"
-        }`,
+        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${sortAsc ? "ASC" : "DESC"}`,
         [],
         (_, results) => {
           const rows = [];
@@ -82,10 +73,56 @@ export default function SavedRecords() {
     });
   }, [sortAsc]);
 
-  // ------------------ TRIGGER FETCH WHEN READY ------------------
   useEffect(() => {
     if (dbReady) fetchRecords();
   }, [dbReady, fetchRecords]);
+
+  // ------------------ EXPORT CSV ------------------
+  const exportToCSV = async () => {
+    if (records.length === 0) {
+      Alert.alert("No Data", "There are no records to export.");
+      return;
+    }
+
+    // CSV Headers
+    const headers = ["ID", "Name", "Aadhaar Number", "DOB", "Gender", "Address", "Scanned At"];
+
+    // CSV Rows
+    const csvRows = records.map((r) =>
+      [
+        r.id,
+        `"${r.name}"`,
+        r.aadhaar_number,
+        r.dob,
+        r.gender,
+        `"${r.address}"`,
+        `"${r.formattedDate}"`,
+      ].join(",")
+    );
+
+    const csvString = [headers.join(","), ...csvRows].join("\n");
+
+    // File path
+    const filePath =
+      Platform.OS === "android"
+        ? `${RNFS.DownloadDirectoryPath}/AadharRecords_${Date.now()}.csv`
+        : `${RNFS.DocumentDirectoryPath}/AadharRecords_${Date.now()}.csv`;
+
+    try {
+      await RNFS.writeFile(filePath, csvString, "utf8");
+      Alert.alert("✅ Success", `CSV saved to:\n${filePath}`);
+
+      // Share CSV
+      await Share.open({
+        title: "Share Aadhar Records CSV",
+        url: Platform.OS === "android" ? `file://${filePath}` : filePath,
+        type: "text/csv",
+      });
+    } catch (error) {
+      console.error("CSV Export Error:", error);
+      Alert.alert("Error", "Failed to export CSV file.");
+    }
+  };
 
   // ------------------ UI ------------------
   return (
@@ -94,6 +131,10 @@ export default function SavedRecords() {
         <Text style={styles.sortButton}>
           Sort by Date ({sortAsc ? "Oldest" : "Newest"})
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={exportToCSV}>
+        <Text style={styles.downloadButton}>⬇️ Download CSV</Text>
       </TouchableOpacity>
 
       <FlatList
@@ -109,9 +150,7 @@ export default function SavedRecords() {
             <Text style={styles.address} numberOfLines={2} ellipsizeMode="tail">
               Address: {item.address || "N/A"}
             </Text>
-            <Text style={styles.time}>
-              🕒 Scanned At: {item.formattedDate}
-            </Text>
+            <Text style={styles.time}>🕒 Scanned At: {item.formattedDate}</Text>
           </View>
         )}
         ListEmptyComponent={
@@ -135,6 +174,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontWeight: "bold",
   },
+  downloadButton: {
+    textAlign: "center",
+    padding: 10,
+    backgroundColor: "#34C759",
+    color: "#fff",
+    borderRadius: 6,
+    marginBottom: 15,
+    fontWeight: "bold",
+  },
   card: {
     backgroundColor: "#fff",
     borderRadius: 8,
@@ -146,25 +194,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowRadius: 3,
   },
-  title: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  subText: {
-    fontSize: 13,
-    color: "#555",
-    marginTop: 2,
-  },
-  address: {
-    fontSize: 13,
-    color: "#444",
-    marginTop: 4,
-  },
-  time: {
-    fontSize: 12,
-    color: "#007AFF",
-    marginTop: 6,
-    fontStyle: "italic",
-  },
+  title: { fontSize: 15, fontWeight: "bold", color: "#333" },
+  subText: { fontSize: 13, color: "#555", marginTop: 2 },
+  address: { fontSize: 13, color: "#444", marginTop: 4 },
+  time: { fontSize: 12, color: "#007AFF", marginTop: 6, fontStyle: "italic" },
 });

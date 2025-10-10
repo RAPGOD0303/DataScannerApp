@@ -14,8 +14,8 @@ import {
   StyleSheet,
   SafeAreaView,
 } from "react-native";
+import DatePicker from 'react-native-date-picker'
 import { launchCamera, launchImageLibrary } from "react-native-image-picker";
-import RNFS from "react-native-fs";
 import TextRecognition from "@react-native-ml-kit/text-recognition";
 import SQLite from "react-native-sqlite-storage";
 
@@ -50,16 +50,40 @@ function initDatabase() {
 }
 
 // =====================================================
+// 🔹 TIMEZONE HELPER (Indian Time)
+// =====================================================
+function getIndianTimestamp() {
+  const now = new Date();
+  const options = {
+    timeZone: "Asia/Kolkata",
+    hour12: true,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  };
+  return new Intl.DateTimeFormat("en-IN", options).format(now);
+}
+
+// =====================================================
 // 🔹 PERMISSIONS HANDLER
 // =====================================================
 async function requestAllPermissions() {
   if (Platform.OS !== "android") return true;
 
-  const camera = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+  const camera = await PermissionsAndroid.request(
+    PermissionsAndroid.PERMISSIONS.CAMERA
+  );
   const storage =
     Platform.Version >= 33
-      ? await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES)
-      : await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+      ? await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        )
+      : await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
 
   if (
     camera !== PermissionsAndroid.RESULTS.GRANTED ||
@@ -72,12 +96,11 @@ async function requestAllPermissions() {
     );
     return false;
   }
-
   return true;
 }
 
 // =====================================================
-// 🔹 OCR PARSER
+// 🔹 OCR PARSER WITH ADDRESS LOGIC
 // =====================================================
 function parseAadhaarText(fullText) {
   const result = {
@@ -118,54 +141,40 @@ function parseAadhaarText(fullText) {
   const dobLine = lines.find((l) => /DOB|Date of Birth/i.test(l));
   if (dobLine) {
     const dobMatch = dobLine.match(/\d{2}[\/-]\d{2}[\/-]\d{4}/);
+    const yearMatch = dobLine.match(/\b\d{4}\b/);
     if (dobMatch) result.dob = dobMatch[0];
+    else if (yearMatch) result.dob = yearMatch[0];
   }
 
   // Gender
   if (/male/i.test(cleanText)) result.gender = "Male";
   else if (/female/i.test(cleanText)) result.gender = "Female";
 
-  // Mobile number
+  // Mobile
   const mobileMatch = cleanText.match(/\b[6-9]\d{9}\b/);
   if (mobileMatch) result.mobile = mobileMatch[0];
 
   // Name
   for (let line of lines) {
-    if (/^[A-Za-z ]+$/.test(line) && !/DOB|Year|Gender|Address|Father|Mother|Wife|Husband/i.test(line)) {
+    if (
+      /^[A-Za-z ]+$/.test(line) &&
+      !/DOB|Year|Gender|Address|Father|Mother|Wife|Husband/i.test(line)
+    ) {
       result.name = line.trim();
       break;
     }
   }
 
-  return result;
-}
-
-// =====================================================
-// 🔹 UTILITIES
-// =====================================================
-function getIndianTimestamp() {
-  const date = new Date();
-  const istTime = new Date(date.getTime() + 5.5 * 60 * 60 * 1000);
-  const formatted = istTime.toISOString().slice(0, 19).replace("T", " ");
-  return formatted;
-}
-
-function formatDisplayDate(dateString) {
-  if (!dateString) return "N/A";
-  try {
-    const date = new Date(dateString.replace(" ", "T"));
-    const options = {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    };
-    return date.toLocaleString("en-IN", options).replace(",", "");
-  } catch (e) {
-    return dateString;
+  // Address
+  const addressIndex = lines.findIndex((l) => /address/i.test(l));
+  if (addressIndex !== -1) {
+    const addressLines = lines
+      .slice(addressIndex + 1, addressIndex + 6)
+      .filter((line) => !/(www\.|http|help|mailto)/i.test(line));
+    result.address = addressLines.join(", ").trim();
   }
+
+  return result;
 }
 
 // =====================================================
@@ -179,10 +188,11 @@ export default function AadharScanner() {
     address: "",
     gender: "",
     mobile: "",
+    scanned_at: "",
   });
   const [records, setRecords] = useState([]);
-  const [recentRecords, setRecentRecords] = useState([]);
-
+  const [date, setDate] = useState(new Date())
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     initDatabase();
     requestAllPermissions();
@@ -190,58 +200,71 @@ export default function AadharScanner() {
   }, []);
 
   // ------------------ OCR IMAGE PROCESSOR ------------------
-  async function processImage(uri) {
+  async function processImage(uri, type) {
     try {
       const ocrResult = await TextRecognition.recognize(uri);
       const extractedText = ocrResult?.text || "";
       const parsed = parseAadhaarText(extractedText);
-      setForm(parsed);
+
+      if (type === "front") setForm((prev) => ({ ...prev, ...parsed }));
+      else if (type === "back") setForm((prev) => ({ ...prev, address: parsed.address }));
     } catch (err) {
       console.error("OCR error:", err);
       Alert.alert("Error", "Failed to extract Aadhaar details.");
     }
   }
 
-  async function handleCapture() {
+  // ------------------ CAPTURE FRONT & BACK ------------------
+  async function captureAadhaar() {
     const allowed = await requestAllPermissions();
     if (!allowed) return;
 
-    const res = await launchCamera({ mediaType: "photo", quality: 0.8 });
-    if (res.didCancel) return;
-    if (res.errorCode) return Alert.alert("Camera Error", res.errorMessage || "Unknown error");
+    const frontRes = await launchCamera({ mediaType: "photo", quality: 0.8 });
+    if (frontRes.didCancel || !frontRes.assets?.[0]?.uri) return;
+    await processImage(frontRes.assets[0].uri, "front");
 
-    const asset = res.assets?.[0];
-    if (asset?.uri) await processImage(asset.uri);
+    const backRes = await launchCamera({ mediaType: "photo", quality: 0.8 });
+    if (backRes.didCancel || !backRes.assets?.[0]?.uri) return;
+    await processImage(backRes.assets[0].uri, "back");
+
+    const scannedAt = getIndianTimestamp();
+    setForm((prev) => ({ ...prev, scanned_at: scannedAt }));
+
+    ToastAndroid.show("✅ Aadhaar captured!", ToastAndroid.SHORT);
   }
 
-  async function handlePickImage() {
+  // ------------------ PICK 2 IMAGES ------------------
+  async function pickAadhaarImages() {
     const allowed = await requestAllPermissions();
     if (!allowed) return;
 
-    const res = await launchImageLibrary({ mediaType: "photo", quality: 0.8 });
-    if (res.didCancel) return;
-    if (res.errorCode) return Alert.alert("Picker Error", res.errorMessage || "Unknown error");
+    const res = await launchImageLibrary({
+      mediaType: "photo",
+      selectionLimit: 2,
+    });
 
-    const asset = res.assets?.[0];
-    if (asset?.uri) await processImage(asset.uri);
+    if (!res.assets || res.assets.length === 0) return;
+
+    if (res.assets[0]?.uri) await processImage(res.assets[0].uri, "front");
+    if (res.assets[1]?.uri) await processImage(res.assets[1].uri, "back");
+
+    const scannedAt = getIndianTimestamp();
+    setForm((prev) => ({ ...prev, scanned_at: scannedAt }));
+
+    ToastAndroid.show("✅ Aadhaar images processed!", ToastAndroid.SHORT);
   }
 
   // ------------------ VALIDATIONS ------------------
   function validateInputs() {
-    const { name, aadhaar_number, dob, gender, mobile } = form;
-
-    if (!name.trim()) return "Please enter a valid name.";
-    if (!aadhaar_number.match(/^\d{12}$/)) return "Aadhaar number must be 12 digits.";
-    if (dob && !dob.match(/^\d{2}[\/-]\d{2}[\/-]\d{4}$/))
-      return "DOB must be in DD/MM/YYYY or DD-MM-YYYY format.";
-    if (gender && !["Male", "Female", "Other"].includes(gender))
-      return "Gender must be Male, Female, or Other.";
-    if (mobile && !mobile.match(/^[6-9]\d{9}$/)) return "Invalid mobile number.";
-
+    const { name, aadhaar_number, address, mobile } = form;
+    if (!name.trim()) return "Name is required!";
+    if (!aadhaar_number.match(/^\d{12}$/)) return "Aadhaar number must be 12 digits!";
+    if (!address.trim()) return "Address is required!";
+    if (!mobile.match(/^[6-9]\d{9}$/)) return "Valid Mobile number is required!";
     return null;
   }
 
-  // ------------------ SAVE OR UPDATE RECORD ------------------
+  // ------------------ SAVE TO DB ------------------
   function saveToDB() {
     const validationError = validateInputs();
     if (validationError) {
@@ -249,21 +272,26 @@ export default function AadharScanner() {
       return;
     }
 
-    const { name, aadhaar_number, dob, address, gender, mobile } = form;
-    const scannedAt = getIndianTimestamp();
+    const { name, aadhaar_number, dob, address, gender, mobile, scanned_at } = form;
 
     db.transaction((tx) => {
       tx.executeSql(
-        `INSERT OR REPLACE INTO AadharData 
-        (id, name, aadhaar_number, dob, address, gender, mobile, scanned_at)
-        VALUES (
-          (SELECT id FROM AadharData WHERE aadhaar_number = ?),
-          ?, ?, ?, ?, ?, ?, ?
-        )`,
-        [aadhaar_number, name, aadhaar_number, dob, address, gender, mobile, scannedAt],
+        `INSERT OR REPLACE INTO AadharData
+          (id, name, aadhaar_number, dob, address, gender, mobile, scanned_at)
+         VALUES ((SELECT id FROM AadharData WHERE aadhaar_number = ?), ?, ?, ?, ?, ?, ?, ?)`,
+        [aadhaar_number, name, aadhaar_number, dob, address, gender, mobile, scanned_at],
         () => {
           ToastAndroid.show("✅ Data saved!", ToastAndroid.SHORT);
           fetchRecords();
+          setForm({
+            aadhaar_number: "",
+            name: "",
+            dob: "",
+            address: "",
+            gender: "",
+            mobile: "",
+            scanned_at: "",
+          });
         },
         (tx, err) => {
           console.error("DB insert error:", err);
@@ -277,17 +305,13 @@ export default function AadharScanner() {
   function fetchRecords() {
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) DESC`,
+        `SELECT * FROM AadharData ORDER BY id DESC`,
         [],
         (tx, results) => {
           const temp = [];
-          for (let i = 0; i < results.rows.length; i++) {
-            temp.push(results.rows.item(i));
-          }
+          for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
           setRecords(temp);
-          setRecentRecords(temp.slice(0, 3)); // last 3
-        },
-        (tx, err) => console.error("DB fetch error:", err)
+        }
       );
     });
   }
@@ -299,13 +323,14 @@ export default function AadharScanner() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.heading}>✏️ Aadhaar Details (Editable)</Text>
+
         {[
-          { key: "aadhaar_number", label: "Aadhaar Number" },
-          { key: "name", label: "Name" },
+          { key: "name", label: "Name *" },
+          { key: "aadhaar_number", label: "Aadhaar Number *" },
           { key: "dob", label: "Date of Birth" },
           { key: "gender", label: "Gender" },
-          { key: "mobile", label: "Mobile Number" },
-          { key: "address", label: "Address" },
+          { key: "mobile", label: "Mobile Number *" },
+          { key: "address", label: "Address *" },
         ].map((f) => (
           <View key={f.key} style={styles.fieldGroup}>
             <Text>{f.label}</Text>
@@ -318,61 +343,34 @@ export default function AadharScanner() {
           </View>
         ))}
 
+        {form.scanned_at ? (
+          <Text style={{ marginTop: 8, color: "gray" }}>
+            🕒 Scanned At: {form.scanned_at}
+          </Text>
+        ) : null}
+
         {/* BUTTONS */}
         <View style={styles.buttonGroup}>
-          <Button title="📷 Capture Aadhaar" onPress={handleCapture} />
+          <Button title="📷 Capture Aadhaar" onPress={captureAadhaar} />
           <View style={{ height: 10 }} />
-          <Button title="🖼 Pick Aadhaar Image" onPress={handlePickImage} />
+          <Button title="📁 Pick Aadhaar Images" onPress={pickAadhaarImages} />
           <View style={{ height: 10 }} />
           <Button title="💾 Save Data" onPress={saveToDB} />
         </View>
-
-        {/* RECENTLY ADDED */}
-        <Text style={[styles.heading, { marginTop: 20 }]}>🕒 Recently Added</Text>
-        {recentRecords.length === 0 ? (
-          <Text>No recent records.</Text>
-        ) : (
-          <FlatList
-            data={recentRecords}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <View style={styles.record}>
-                <Text>Name: {item.name}</Text>
-                <Text>Aadhaar: {item.aadhaar_number}</Text>
-                <Text>DOB: {item.dob}</Text>
-                <Text>Gender: {item.gender}</Text>
-                <Text>Mobile: {item.mobile}</Text>
-                <Text style={styles.timestamp}>
-                  Scanned At: {formatDisplayDate(item.scanned_at)}
-                </Text>
-              </View>
-            )}
-          />
-        )}
-
-        {/* ALL RECORDS */}
-        <Text style={[styles.heading, { marginTop: 20 }]}>📄 All Saved Records</Text>
-        {records.length === 0 ? (
-          <Text>No records yet.</Text>
-        ) : (
-          <FlatList
-            data={records}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <View style={styles.record}>
-                <Text>Aadhaar: {item.aadhaar_number}</Text>
-                <Text>Name: {item.name}</Text>
-                <Text>DOB: {item.dob}</Text>
-                <Text>Gender: {item.gender}</Text>
-                <Text>Mobile: {item.mobile}</Text>
-                {item.address ? <Text>Address: {item.address}</Text> : null}
-                <Text style={styles.timestamp}>
-                  Scanned At: {formatDisplayDate(item.scanned_at)}
-                </Text>
-              </View>
-            )}
-          />
-        )}
+            {/* <Button title="Open" onPress={() => setOpen(true)} />
+        <DatePicker
+        modal
+        open={open}
+        date={date}
+        onConfirm={(date) => {
+          setOpen(false)
+          setDate(date)
+        }}
+        onCancel={() => {
+          setOpen(false)
+        }}
+      />
+      <Text>{JSON.stringify(date)}</Text> */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -386,27 +384,7 @@ const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 80 },
   heading: { fontWeight: "bold", fontSize: 16, marginBottom: 10 },
   fieldGroup: { marginTop: 10 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#999",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 5,
-    backgroundColor: "#fff",
-  },
+  input: { borderWidth: 1, borderColor: "#999", borderRadius: 8, padding: 12, marginTop: 5, backgroundColor: "#fff" },
   buttonGroup: { marginTop: 20, marginBottom: 20 },
-  record: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 10,
-    backgroundColor: "#fff",
-  },
-  timestamp: {
-    fontSize: 12,
-    color: "#007AFF",
-    marginTop: 4,
-    fontStyle: "italic",
-  },
+  record: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginTop: 10, backgroundColor: "#fff" },
 });
