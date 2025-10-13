@@ -110,14 +110,39 @@ export default function SavedRecords() {
 
     try {
       await RNFS.writeFile(filePath, csvString, "utf8");
-      Alert.alert("✅ Success", `CSV saved to:\n${filePath}`);
 
-      // Share CSV
-      await Share.open({
-        title: "Share Aadhar Records CSV",
-        url: Platform.OS === "android" ? `file://${filePath}` : filePath,
-        type: "text/csv",
-      });
+      // ✅ Alert saved success and ask if user wants to share
+      Alert.alert(
+        "✅ CSV Saved",
+        `File saved to:\n${filePath}`,
+        [
+          {
+            text: "Share",
+            onPress: async () => {
+              try {
+                await Share.open({
+                  title: "Share Aadhar Records CSV",
+                  url: Platform.OS === "android" ? `file://${filePath}` : filePath,
+                  type: "text/csv",
+                });
+              } catch (shareErr) {
+                // Ignore user cancel
+                if (
+                  shareErr?.message?.includes("User did not share") ||
+                  shareErr?.error?.includes("User did not share")
+                ) {
+                  console.log("User cancelled sharing — no action needed.");
+                  return;
+                }
+                console.error("Share Error:", shareErr);
+                Alert.alert("Error", "Failed to share the CSV file.");
+              }
+            },
+          },
+          { text: "OK", style: "cancel" },
+        ],
+        { cancelable: true }
+      );
     } catch (error) {
       console.error("CSV Export Error:", error);
       Alert.alert("Error", "Failed to export CSV file.");

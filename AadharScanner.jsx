@@ -204,6 +204,7 @@ export default function AadharScanner() {
     try {
       const ocrResult = await TextRecognition.recognize(uri);
       const extractedText = ocrResult?.text || "";
+      
       const parsed = parseAadhaarText(extractedText);
 
       if (type === "front") setForm((prev) => ({ ...prev, ...parsed }));
