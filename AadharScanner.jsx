@@ -35,7 +35,7 @@ function initDatabase() {
       `CREATE TABLE IF NOT EXISTS AadharData (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
-        aadhaar_number TEXT UNIQUE,
+        aadhaar_number TEXT,
         dob TEXT,
         address TEXT,
         gender TEXT,
@@ -245,6 +245,99 @@ console.log("TimeStamp ", getIndianTimestamp());
     setForm((prev) => ({ ...prev, scanned_at: getIndianTimestamp() }));
     ToastAndroid.show("✅ Aadhaar captured successfully!", ToastAndroid.SHORT);
   }
+  //------Full Aadhar Scan---------
+  async function captureFullAadhar() {
+    const allowed = await requestAllPermissions();
+    if (!allowed) return;
+
+    try {
+      const res = await launchCamera({ mediaType: "photo", quality: 0.8 });
+      if (res.didCancel || !res.assets?.[0]?.uri) return;
+
+      const uri = res.assets[0].uri;
+      const ocrResult = await TextRecognition.recognize(uri);
+      const extractedText = ocrResult?.text?.trim();
+
+      if (!extractedText || extractedText.length < 30) {
+        Alert.alert(
+          "Image not clear",
+          "No readable text found. Please capture a clearer Aadhaar image."
+        );
+        return;
+      }
+
+      const lines = extractedText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l);
+
+      let nameLines = [];
+      let addressLines = [];
+      const toIndex = lines.findIndex((l) => /To/i.test(l));
+
+      if (toIndex !== -1) {
+        // Name: next 1 or 2 lines after "To"
+        nameLines = lines.slice(toIndex + 1, toIndex + 2);
+
+        // Address: all lines after name until a line contains 6-digit PIN
+        for (let i = toIndex + 2; i < lines.length; i++) {
+          addressLines.push(lines[i]);
+          if (/\b\d{6}\b/.test(lines[i])) break; // Stop at first 6-digit number
+        }
+      }
+
+      const name = nameLines.join(" ").trim();
+      const address = addressLines.join(", ").trim();
+
+      // Aadhaar number
+      const aadhaarMatch = extractedText.match(/\b\d{4}\s?\d{4}\s?\d{4}\b/);
+      const aadhaar_number = aadhaarMatch ? aadhaarMatch[0].replace(/\s/g, "") : "";
+
+      // DOB
+      let dob = "";
+      const dobLine = lines.find((l) => /DOB|Date of Birth/i.test(l));
+      if (dobLine) {
+        const dobMatch = dobLine.match(/\d{2}[\/-]\d{2}[\/-]\d{4}/);
+        const yearMatch = dobLine.match(/\b\d{4}\b/);
+        if (dobMatch) dob = dobMatch[0];
+        else if (yearMatch) dob = yearMatch[0];
+      }
+
+      // Gender
+      let gender = "";
+      if (/male/i.test(extractedText)) gender = "Male";
+      else if (/female/i.test(extractedText)) gender = "Female";
+
+      // Mobile
+      let mobile = "";
+      const mobileMatch = extractedText.match(/\b[6-9]\d{9}\b/);
+      if (mobileMatch) mobile = mobileMatch[0];
+
+      if (!aadhaar_number && !name && !dob && !address) {
+        Alert.alert(
+          "No Data Found",
+          "Could not detect Aadhaar details. Please recapture a clear image."
+        );
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        aadhaar_number,
+        name,
+        dob,
+        address,
+        gender,
+        mobile,
+        scanned_at: getIndianTimestamp(),
+      }));
+
+      ToastAndroid.show("✅ Aadhaar details captured!", ToastAndroid.SHORT);
+    } catch (err) {
+      console.error("OCR error:", err);
+      Alert.alert("Error", "Failed to extract Aadhaar details.");
+    }
+  }
 
   async function pickAadhaarImages() {
     const allowed = await requestAllPermissions();
@@ -303,14 +396,37 @@ console.log("TimeStamp ", getIndianTimestamp());
       }
     });
   }
-
+ function isFieldValid(key, value) {
+    switch (key) {
+      case "name":
+        return /^[A-Za-z ]+$/.test(value.trim());
+      case "aadhaar_number":
+        return /^\d{12}$/.test(value);
+      case "mobile":
+        return /^\d{10}$/.test(value);
+      case "address":
+        return value.trim().length > 0;
+      case "dob":
+        if (!value) return false;
+        const today = new Date();
+        const selected = new Date(value);
+        return selected <= today;
+      default:
+        return true;
+    }
+  }
   function validateInputs() {
     const { name, aadhaar_number, mobile, address, dob } = form;
     if (!name.trim() || !/^[A-Za-z ]+$/.test(name)) return false;
     if (!aadhaar_number.match(/^\d{12}$/)) return false;
     if (!mobile.match(/^\d{10}$/)) return false;
     if (!address.trim()) return false;
-    if (dob && new Date(dob) > new Date()) return false;
+    // if (dob && new Date(dob) > new Date()) return false;
+    if (dob) {
+      const today = new Date();
+      const selected = new Date(dob);
+      if (selected > today) return false;
+    }
     return true;
   }
 
@@ -335,6 +451,14 @@ console.log("TimeStamp ", getIndianTimestamp());
       });
     });
   }
+ const fields = [
+    { key: "name", label: "Name *", hint: "Only alphabets and spaces allowed." },
+    { key: "aadhaar_number", label: "Aadhaar Number *", hint: "Must be exactly 12 digits." },
+    { key: "dob", label: "Date of Birth", hint: "Select a valid date (not in future)." },
+    { key: "gender", label: "Gender", hint: "Enter Male or Female." },
+    { key: "mobile", label: "Mobile Number *", hint: "Enter a valid 10-digit mobile number." },
+    { key: "address", label: "Address *", hint: "Provide complete address details." },
+  ];
 
   // UI (same as yours)
   return (
@@ -344,7 +468,7 @@ console.log("TimeStamp ", getIndianTimestamp());
           {updateModeOn ? "✏️ Edit Aadhaar Record" : "🪪 Aadhaar Scanner"}
         </Text>
 
-        {[
+        {/* {[
           { key: "name", label: "Name *" },
           { key: "aadhaar_number", label: "Aadhaar Number *" },
           { key: "dob", label: "Date of Birth" },
@@ -412,15 +536,85 @@ console.log("TimeStamp ", getIndianTimestamp());
               />
             )}
           </View>
-        ))}
+        ))} */}
 
+        {fields.map((f) => (
+          <View key={f.key} style={styles.fieldGroup}>
+            {f.key === "dob" ? (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.input,
+                    styles.dateInput,
+                    {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    },
+                  ]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={{ color: form.dob ? "#000" : "#888" }}>
+                    {form.dob || "Date of Birth"}
+                  </Text>
+                  <Icon name="calendar-today" size={20} color="#555" />
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={form.dob ? new Date(form.dob) : new Date()}
+                    mode="date"
+                    maximumDate={new Date()}
+                    display="spinner"
+                    onChange={(event, selectedDate) => {
+                      setShowDatePicker(false);
+                      if (selectedDate)
+                        setForm({
+                          ...form,
+                          dob: selectedDate.toISOString().split("T")[0],
+                        });
+                    }}
+                  />
+                )}
+              </>
+            ) : (
+              <TextInput
+                style={[
+                  styles.input,
+                  !isFieldValid(f.key, form[f.key]) && form[f.key] !== "" && styles.invalidInput,
+                ]}
+                value={form[f.key]}
+                keyboardType={
+                  f.key === "mobile" || f.key === "aadhaar_number"
+                    ? "numeric"
+                    : "default"
+                }
+                maxLength={
+                  f.key === "mobile"
+                    ? 10
+                    : f.key === "aadhaar_number"
+                      ? 12
+                      : undefined
+                }
+                onChangeText={(t) => {
+                  if (f.key === "name") t = t.replace(/[^A-Za-z ]/g, "");
+                  if (f.key === "aadhaar_number" || f.key === "mobile")
+                    t = t.replace(/\D/g, "");
+                  setForm({ ...form, [f.key]: t });
+                }}
+                placeholder={`Enter ${f.label}`}
+                placeholderTextColor="#888"
+              />
+            )}
+          </View>
+        ))}
         {form.scanned_at ? (
           <Text style={{ marginTop: 8, color: "gray" }}>
             🕒 Scanned At: {form.scanned_at}
           </Text>
         ) : null}
 
-        <View style={styles.buttonGroup}>
+        {/* <View style={styles.buttonGroup}>
           {!updateModeOn && (
             <>
               <Button title="📷 Capture Aadhaar" onPress={captureAadhaar} />
@@ -445,34 +639,182 @@ console.log("TimeStamp ", getIndianTimestamp());
 
           <View style={{ height: 10 }} />
           <Button title="🧹 Clear All Fields" onPress={clearAllFields} />
+        </View> */}
+
+        {/* Btn groups */}
+        <View style={styles.buttonGroup}>
+         
+          {!updateModeOn && (
+            <View style={styles.innerbtn}>
+               <Text style={styles.title}>Aadhar Capture Image</Text>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: "#BBDEFB" }]}
+                onPress={captureAadhaar}
+              >
+                <Text style={styles.actionButtonText}>
+                  📷 Capture Front/Back
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: "#BBDEFB" }]}
+                onPress={captureFullAadhar}
+              >
+                <Text style={styles.actionButtonText}>
+                  📷 Capture Single Aadhaar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                // eslint-disable-next-line react-native/no-inline-styles
+                style={[styles.actionButton, { borderColor: "red", borderWidth: 1,elevation:0}]}
+                onPress={pickAadhaarImages}
+              >
+                <Text style={styles.actionButtonText}>📁 Select from Gallery</Text>
+              </TouchableOpacity>
+          </View>
+          )}
+
+
+          <TouchableOpacity
+            onPress={saveToDB}
+            disabled={!validateInputs()}
+            style={[
+              styles.saveButton,
+              {
+                backgroundColor: validateInputs() ? "#27ae60" : "#bdc3c7",
+              },
+            ]}
+          >
+            <Text style={styles.saveButtonText}>{updateModeOn ? "💾 Update Record" : "💾 Save Data"}</Text>
+          </TouchableOpacity>
+
+        {!updateModeOn && (
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: "#e74c3c",alignItems:"center" }]}
+            onPress={clearAllFields}
+          >
+            {/* <Text style={styles.actionButtonText}>🧹 Clear All Fields</Text> */}
+            <Text style={[styles.actionButtonText,{color:"#fff"}]}>🔄️ Reset</Text>
+          </TouchableOpacity>
+        )}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#f9f9f9",
-    paddingTop: Platform.OS === "android" ? 30 : 0,
+    backgroundColor: "#f4f6f8",
+    paddingTop: Platform.OS === "android" ? 35 : 0,
   },
-  container: { padding: 20, paddingBottom: 80 },
-  heading: { fontWeight: "bold", fontSize: 18, marginBottom: 10 },
-  fieldGroup: { marginTop: 10 },
+  container: {
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  heading: {
+    fontWeight: "700",
+    fontSize: 24,
+    textAlign: "center",
+    color: "#2c3e50",
+    marginBottom: 20,
+  },
+  title:{
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  fieldGroup: {
+    marginBottom: 16,
+  },
   input: {
     borderWidth: 1,
-    borderColor: "#999",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 5,
+    borderColor: "#d1d5db", // Default neutral border
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: "#fff",
+    fontSize: 16,
+    color: "#333",
+    elevation: 1,
   },
-  buttonGroup: { marginTop: 20, marginBottom: 20 },
+  invalidInput: {
+    borderColor: "red", // 🔴 Highlight invalid field
+  },
+  dateInput: {
+    borderStyle: "solid",
+  },
+  scanTime: {
+    marginTop: 8,
+    color: "gray",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  buttonGroup: {
+    marginTop: 5,
+    padding:20,
+    backgroundColor:'#fff',
+    elevation:2,
+    borderRadius:10
+  },
+  innerbtn:{
+    marginTop: 1,
+    paddingTop:2,
+    paddingHorizontal:20,
+    backgroundColor:'#fff',
+    elevation:0.5,
+    borderRadius:10
+  },
+  actionButton: {
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: "flex-start",
+    marginBottom: 12,
+    marginTop:10,
+    elevation: 1,
+    textAlign:'left'
+  },
+  actionButtonText: {
+    color: "#000000ff",
+    fontWeight: "600",
+    fontSize: 16,
+  },
   saveButton: {
-    padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: "center",
+    marginBottom: 12,
   },
-  saveButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  saveButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 17,
+  },
 });
+
+// const styles = StyleSheet.create({
+//   safeArea: {
+//     flex: 1,
+//     backgroundColor: "#f9f9f9",
+//     paddingTop: Platform.OS === "android" ? 30 : 0,
+//   },
+//   container: { padding: 20, paddingBottom: 80 },
+//   heading: { fontWeight: "bold", fontSize: 18, marginBottom: 10 },
+//   fieldGroup: { marginTop: 10 },
+//   input: {
+//     borderWidth: 1,
+//     borderColor: "#999",
+//     borderRadius: 8,
+//     padding: 12,
+//     marginTop: 5,
+//     backgroundColor: "#fff",
+//   },
+//   buttonGroup: { marginTop: 20, marginBottom: 20 },
+//   saveButton: {
+//     padding: 12,
+//     borderRadius: 8,
+//     alignItems: "center",
+//   },
+//   saveButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+// });
