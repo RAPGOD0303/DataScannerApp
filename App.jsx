@@ -2,7 +2,7 @@
 import * as React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Text, SafeAreaView, Platform, StatusBar, StyleSheet } from "react-native";
+import { Text, SafeAreaView, Platform, StatusBar, StyleSheet,View } from "react-native";
 import AadharScanner from "./AadharScanner";
 import SavedRecords from "./SavedRecords";
 
@@ -10,7 +10,8 @@ const Tab = createBottomTabNavigator();
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    // <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <NavigationContainer>
         <Tab.Navigator
@@ -23,6 +24,8 @@ export default function App() {
                   color: focused ? "#007AFF" : "#777",
                   fontSize: 14,
                   fontWeight: focused ? "700" : "500",
+                                padding:10,
+
                   marginBottom: Platform.OS === "android" ? 8 : 5,
                 }}
               >
@@ -30,10 +33,15 @@ export default function App() {
               </Text>
             ),
             tabBarStyle: {
-              backgroundColor: "#ffffff",
+              backgroundColor: "#ffffffff",
               borderTopWidth: 0.5,
               borderTopColor: "#ccc",
               elevation: 8,
+              display:"flex",
+              padding:50,
+              textAlign:"center",
+              alignItem:"center",
+              justifyContent:"center",
               height: 100,
               paddingBottom: Platform.OS === "android" ? 8 : 4,
             },
@@ -43,7 +51,7 @@ export default function App() {
           <Tab.Screen name="Records" component={SavedRecords} />
         </Tab.Navigator>
       </NavigationContainer>
-    </SafeAreaView>
+    </View>
   );
 }
 

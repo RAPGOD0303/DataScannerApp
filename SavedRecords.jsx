@@ -11,11 +11,14 @@ import {
 import SQLite from "react-native-sqlite-storage";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
+import { useNavigation,useFocusEffect } from "@react-navigation/native";
 
 export default function SavedRecords() {
   const [records, setRecords] = useState([]);
   const [sortAsc, setSortAsc] = useState(false);
   const [dbReady, setDbReady] = useState(false);
+  const [db, setDb] = useState(null);
+  const navigation = useNavigation();
 
   // ------------------ FORMAT DATE & TIME ------------------
   const formatDateTime = (isoString) => {
@@ -38,45 +41,82 @@ export default function SavedRecords() {
   };
 
   // ------------------ OPEN DATABASE ------------------
+  // useEffect(() => {
+  //   const db = SQLite.openDatabase(
+  //     { name: "AadharDB.db", location: "default" },
+  //     () => setDbReady(true),
+  //     (error) => {
+  //       console.error("❌ Failed to open database:", error);
+  //       Alert.alert("Database Error", "Failed to open local database.");
+  //     }
+  //   );
+  //   return () => db.close();
+  // }, []);
+
   useEffect(() => {
-    const db = SQLite.openDatabase(
+    const database = SQLite.openDatabase(
       { name: "AadharDB.db", location: "default" },
-      () => setDbReady(true),
-      (error) => {
-        console.error("❌ Failed to open database:", error);
-        Alert.alert("Database Error", "Failed to open local database.");
-      }
+      () => {
+        setDb(database);
+        setDbReady(true);
+      },
+      (err) => console.error("DB open error", err)
     );
-    return () => db.close();
+
+    return () => database.close();
   }, []);
 
   // ------------------ FETCH RECORDS ------------------
-  const fetchRecords = useCallback(() => {
-    const db = SQLite.openDatabase({ name: "AadharDB.db", location: "default" });
+  // const fetchRecords = useCallback(() => {
+  //   const db = SQLite.openDatabase({ name: "AadharDB.db", location: "default" });
+  //   db.transaction((tx) => {
+  //     tx.executeSql(
+  //       `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${sortAsc ? "ASC" : "DESC"}`,
+  //       [],
+  //       (_, results) => {
+  //         const rows = [];
+  //         for (let i = 0; i < results.rows.length; i++) {
+  //           const item = results.rows.item(i);
+  //           rows.push({
+  //             ...item,
+  //             formattedDate: formatDateTime(item.scanned_at),
+  //           });
+  //         }
+  //         setRecords(rows);
+  //       },
+  //       (error) => console.error("SQL error:", error)
+  //     );
+  //   });
+  // }, [sortAsc]);
+
+ const fetchRecords = useCallback(() => {
+    if (!dbReady || !db) return;
+
     db.transaction((tx) => {
       tx.executeSql(
-        `SELECT * FROM AadharData ORDER BY datetime(scanned_at) ${sortAsc ? "ASC" : "DESC"}`,
+        "SELECT * FROM AadharData ORDER BY id DESC",
         [],
         (_, results) => {
-          const rows = [];
-          for (let i = 0; i < results.rows.length; i++) {
-            const item = results.rows.item(i);
-            rows.push({
-              ...item,
-              formattedDate: formatDateTime(item.scanned_at),
-            });
-          }
-          setRecords(rows);
+          const temp = [];
+          for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
+
+          setRecords(temp);
+          console.log("Inside SaveRecords ", records)
         },
-        (error) => console.error("SQL error:", error)
+        (tx, err) => console.error("Fetch error:", err)
       );
     });
-  }, [sortAsc]);
+  }, [dbReady, db, records]);
 
-  useEffect(() => {
-    if (dbReady) fetchRecords();
-  }, [dbReady, fetchRecords]);
 
+  // useEffect(() => {
+  //   if (dbReady) fetchRecords();
+  // }, [dbReady, fetchRecords]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchRecords();
+    }, [fetchRecords])
+  );
   // ------------------ EXPORT CSV ------------------
   const exportToCSV = async () => {
     if (records.length === 0) {
@@ -84,10 +124,8 @@ export default function SavedRecords() {
       return;
     }
 
-    // CSV Headers
-    const headers = ["ID", "Name", "Aadhaar Number", "DOB", "Gender", "Address", "Scanned At"];
+    const headers = ["ID", "Name", "Aadhaar Number", "DOB", "Gender","Mobile Number", "Address", "Scanned At"];
 
-    // CSV Rows
     const csvRows = records.map((r) =>
       [
         r.id,
@@ -95,6 +133,7 @@ export default function SavedRecords() {
         r.aadhaar_number,
         r.dob,
         r.gender,
+        r.mobile,
         `"${r.address}"`,
         `"${r.formattedDate}"`,
       ].join(",")
@@ -102,7 +141,6 @@ export default function SavedRecords() {
 
     const csvString = [headers.join(","), ...csvRows].join("\n");
 
-    // File path
     const filePath =
       Platform.OS === "android"
         ? `${RNFS.DownloadDirectoryPath}/AadharRecords_${Date.now()}.csv`
@@ -111,7 +149,6 @@ export default function SavedRecords() {
     try {
       await RNFS.writeFile(filePath, csvString, "utf8");
 
-      // ✅ Alert saved success and ask if user wants to share
       Alert.alert(
         "✅ CSV Saved",
         `File saved to:\n${filePath}`,
@@ -126,7 +163,6 @@ export default function SavedRecords() {
                   type: "text/csv",
                 });
               } catch (shareErr) {
-                // Ignore user cancel
                 if (
                   shareErr?.message?.includes("User did not share") ||
                   shareErr?.error?.includes("User did not share")
@@ -149,14 +185,53 @@ export default function SavedRecords() {
     }
   };
 
+  // ------------- UPDATE RECORD ---------------
+  const handleUpdate = (record) => {
+    console.log("📤 Navigating to Scan tab with record:", record);
+    navigation.navigate("Scan", { record, refreshKey: Date.now()});
+  };
+
+  // ------------- DELETE RECORD ----------------
+  const handleDelete = (recordId) => {
+    Alert.alert(
+      "Confirm Delete",
+      "Are you sure you want to delete this record?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            const db = SQLite.openDatabase({ name: "AadharDB.db", location: "default" });
+            db.transaction((tx) => {
+              tx.executeSql(
+                `DELETE FROM AadharData WHERE id = ?`,
+                [recordId],
+                () => {
+                  Alert.alert("Deleted", "Record deleted successfully.");
+                  fetchRecords(); // refresh list
+                },
+                (err) => console.error("DB delete error:", err)
+              );
+            });
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   // ------------------ UI ------------------
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => setSortAsc(!sortAsc)}>
+      {/* <TouchableOpacity onPress={() => setSortAsc(!sortAsc)}>
         <Text style={styles.sortButton}>
           Sort by Date ({sortAsc ? "Oldest" : "Newest"})
         </Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       <TouchableOpacity onPress={exportToCSV}>
         <Text style={styles.downloadButton}>⬇️ Download CSV</Text>
@@ -167,15 +242,42 @@ export default function SavedRecords() {
         keyExtractor={(item) => item.id?.toString() ?? Math.random().toString()}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Text style={styles.title}>{item.name}</Text>
-            <Text style={styles.subText}>Aadhaar: {item.aadhaar_number}</Text>
-            <Text style={styles.subText}>
-              DOB: {item.dob || "N/A"} | Gender: {item.gender || "N/A"}
-            </Text>
-            <Text style={styles.address} numberOfLines={2} ellipsizeMode="tail">
-              Address: {item.address || "N/A"}
-            </Text>
-            <Text style={styles.time}>🕒 Scanned At: {item.formattedDate}</Text>
+            <View style={styles.cardContent}>
+              {/* Left Side: Record Info */}
+              <View style={styles.textContainer}>
+                <Text style={styles.title}>{item.name}</Text>
+                <Text style={styles.subText}>Aadhaar: {item.aadhaar_number}</Text>
+                <Text style={styles.subText}>
+                  DOB: {item.dob || "N/A"} | Gender: {item.gender || "N/A"}
+                </Text>
+                <Text style={styles.subText}>
+                  Mobile: {item.mobile || "N/A"}
+                </Text>
+                <Text style={styles.address} numberOfLines={2} ellipsizeMode="tail">
+                  Address: {item.address || "N/A"}
+                </Text>
+                <Text style={styles.time}>🕒 Scanned At: {item.scanned_at}</Text>
+              </View>
+
+              {/* Right Side: Edit/Delete Buttons */}
+              <View style={styles.actionContainer}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.editButton]}
+                  onPress={() => handleUpdate(item)}
+                >
+                  <Text style={styles.actionText}>Edit</Text>
+
+
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => handleDelete(item.id)}
+                >
+                  <Text style={styles.actionText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
         ListEmptyComponent={
@@ -188,8 +290,10 @@ export default function SavedRecords() {
   );
 }
 
+// ------------------ STYLES ------------------
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#F8F9FA" },
+
   sortButton: {
     textAlign: "center",
     padding: 10,
@@ -208,6 +312,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontWeight: "bold",
   },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 8,
@@ -219,6 +324,41 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowRadius: 3,
   },
+
+  cardContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  textContainer: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  actionContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  actionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  editButton: {
+    backgroundColor: "#007aff",
+  },
+  deleteButton: {
+    backgroundColor: "#FF3B30",
+  },
+  actionText: {
+    fontSize: 14,
+    color: "#fff",
+    fontWeight: "bold",
+  },
+
   title: { fontSize: 15, fontWeight: "bold", color: "#333" },
   subText: { fontSize: 13, color: "#555", marginTop: 2 },
   address: { fontSize: 13, color: "#444", marginTop: 4 },
