@@ -12,6 +12,7 @@ import SQLite from "react-native-sqlite-storage";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { useNavigation,useFocusEffect } from "@react-navigation/native";
+import Icon from '@react-native-vector-icons/material-icons';
 
 export default function SavedRecords() {
   const [records, setRecords] = useState([]);
@@ -234,8 +235,18 @@ export default function SavedRecords() {
       </TouchableOpacity> */}
 
       <TouchableOpacity onPress={exportToCSV}>
-        <Text style={styles.downloadButton}>⬇️ Download CSV</Text>
+        
+      <View style={styles.downloadButton}>
+          <Icon
+            name="download"
+            size={22}
+            color="#ffffffff"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={{color:'#fff'}}>Download CSV</Text>
+      </View>
       </TouchableOpacity>
+    
 
       <FlatList
         data={records}
@@ -304,6 +315,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   downloadButton: {
+    display:'flex',
+    flexDirection:"row",
+    justifyContent:'center',
     textAlign: "center",
     padding: 10,
     backgroundColor: "#34C759",
