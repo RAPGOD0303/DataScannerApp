@@ -168,6 +168,7 @@ function parseAadhaarText(fullText) {
 export default function AadharScanner() {
   const route = useRoute();
   const scrollRef = useRef(null);
+  const [hasScanned, setHasScanned] = useState(false);
 
   const [form, setForm] = useState({
     id:0,
@@ -242,6 +243,7 @@ console.log("TimeStamp ", getIndianTimestamp());
     if (backRes.didCancel || !backRes.assets?.[0]?.uri) return;
     const backOk = await processImage(backRes.assets[0].uri, "back");
     if (!backOk) return;
+    setHasScanned(true);
     setForm((prev) => ({ ...prev, scanned_at: getIndianTimestamp() }));
     ToastAndroid.show("✅ Aadhaar captured successfully!", ToastAndroid.SHORT);
   }
@@ -331,7 +333,7 @@ console.log("TimeStamp ", getIndianTimestamp());
         mobile,
         scanned_at: getIndianTimestamp(),
       }));
-
+      setHasScanned(true);
       ToastAndroid.show("✅ Aadhaar details captured!", ToastAndroid.SHORT);
     } catch (err) {
       console.error("OCR error:", err);
@@ -350,6 +352,7 @@ console.log("TimeStamp ", getIndianTimestamp());
     if (res.assets[0]?.uri) await processImage(res.assets[0].uri, "front");
     if (res.assets[1]?.uri) await processImage(res.assets[1].uri, "back");
     setForm((prev) => ({ ...prev, scanned_at: getIndianTimestamp() }));
+    setHasScanned(true);
     ToastAndroid.show("✅ Aadhaar images processed!", ToastAndroid.SHORT);
   }
 
@@ -514,7 +517,7 @@ console.log("TimeStamp ", getIndianTimestamp());
                 style={[
                   styles.input,
                   f.key === "address" && {height: 100, textAlignVertical:"top"},
-                  !isFieldValid(f.key, form[f.key]) && form[f.key] !== "" && styles.invalidInput,
+                  (!isFieldValid(f.key, form[f.key]) && (form[f.key] !== "" || hasScanned)) && styles.invalidInput
                 ]}
                 value={form[f.key]}
                 keyboardType={
@@ -632,8 +635,13 @@ console.log("TimeStamp ", getIndianTimestamp());
           >
             {/* <Text style={styles.actionButtonText}>🧹 Clear All Fields</Text> */}
             <Text style={[styles.actionButtonText,{color:"#fff"}]}>
-              <Text>🔄️</Text>
-              <Text> Reset</Text>
+              {/* <Text>🔄️</Text> */}
+              
+              
+             <View style={styles.clearContainer}>
+      <Icon name="refresh" size={22} color="#eff2f5ff" style={styles.clearIcon} />
+      <Text style={styles.clearText}>Clear All Fields</Text>
+    </View>
             </Text>
           </TouchableOpacity>
         )}
@@ -729,6 +737,20 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontWeight: "bold",
     fontSize: 17,
+  },
+  clearContainer: {
+    flexDirection: "row",   // Icon + text side by side
+    alignItems: "center",   // Vertically centered
+    justifyContent: "center",
+  },
+  clearIcon: {
+    // optional fine-tuning
+    marginRight: 6,
+  },
+  clearText: {
+    color: "#eff2f5ff",
+    fontSize: 16,
+    fontWeight: "500",
   },
 });
 
