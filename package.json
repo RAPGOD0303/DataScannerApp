@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "github:react-native-datetimepicker/datetimepicker",
-    "@react-native-ml-kit/barcode-scanning": "^2.0.0",
     "@react-native-ml-kit/text-recognition": "^2.0.0",
     "@react-native-vector-icons/material-icons": "^12.3.0",
     "@react-native/new-app-screen": "0.81.4",
@@ -20,17 +19,13 @@
     "react": "19.1.0",
     "react-icons": "^5.5.0",
     "react-native": "0.81.4",
-    "react-native-date-picker": "^5.0.13",
-    "react-native-file-viewer": "^2.1.5",
     "react-native-fs": "^2.20.0",
     "react-native-image-picker": "^8.2.1",
-    "react-native-qrcode-local-image": "^1.0.7",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "^4.16.0",
     "react-native-share": "^12.2.0",
     "react-native-sqlite-storage": "^6.0.1",
-    "react-native-vector-icons": "^10.3.0",
-    "react-native-walkthrough-tooltip": "^1.6.0"
+    "react-native-vector-icons": "^10.3.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

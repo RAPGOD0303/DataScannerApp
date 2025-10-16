@@ -104,6 +104,18 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+//        release {
+//            // ✅ Use debug key for now (for testing)
+//            signingConfig signingConfigs.debug
+//
+//            // ✅ Optimize build size
+//            shrinkResources true
+//            minifyEnabled true
+//            useProguard true
+//
+//            // ✅ Use the optimized default ProGuard rules
+//            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+//        }
     }
 }
 
@@ -117,3 +129,90 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+//////////////////////////////////////////////////////////////
+//apply plugin: "com.android.application"
+//apply plugin: "org.jetbrains.kotlin.android"
+//apply plugin: "com.facebook.react"
+//
+///**
+// * React Native configuration block.
+// * You normally don't need to change anything here unless customizing bundling or build setup.
+// */
+//react {
+//    autolinkLibrariesWithApp()
+//}
+//
+///**
+// * Whether to enable ProGuard (code minification) for release builds.
+// * You can toggle this later if needed.
+// */
+//def enableProguardInReleaseBuilds = true
+//
+///**
+// * JavaScript engine configuration (Hermes or JSC)
+// */
+//def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+//
+//android {
+//    namespace "com.datascanner"
+//    ndkVersion rootProject.ext.ndkVersion
+//    buildToolsVersion rootProject.ext.buildToolsVersion
+//    compileSdk rootProject.ext.compileSdkVersion
+//
+//    defaultConfig {
+//        applicationId "com.datascanner"
+//        minSdkVersion rootProject.ext.minSdkVersion
+//        targetSdkVersion rootProject.ext.targetSdkVersion
+//        versionCode 1
+//        versionName "1.0"
+//    }
+//
+//    signingConfigs {
+//        debug {
+//            storeFile file('debug.keystore')
+//            storePassword 'android'
+//            keyAlias 'androiddebugkey'
+//            keyPassword 'android'
+//        }
+//    }
+//
+//    buildTypes {
+//        debug {
+//            signingConfig signingConfigs.debug
+//        }
+//
+//        release {
+//            // ✅ Use debug key for now (for testing)
+//            signingConfig signingConfigs.debug
+//
+//            // ✅ Optimize build size
+//            shrinkResources true
+//            minifyEnabled enableProguardInReleaseBuilds
+//
+//            // ✅ Use modern ProGuard configuration
+//            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+//        }
+//    }
+//}
+//project.ext.react = [
+//        entryFile: "index.js",
+//        enableHermes: true, // Enable or disable Hermes here
+//]
+//
+//dependencies {
+//    // React Native runtime
+//    implementation("com.facebook.react:react-android")
+//    implementation("com.google.mlkit:text-recognition:16.0.0-beta6") {
+//        // ❌ Exclude heavy language-specific models you don’t need
+//        exclude group: "com.google.mlkit", module: "text-recognition-chinese"
+//        exclude group: "com.google.mlkit", module: "text-recognition-japanese"
+//        exclude group: "com.google.mlkit", module: "text-recognition-korean"
+//    }
+//    // JavaScript engine
+//    if (hermesEnabled.toBoolean()) {
+//        implementation("com.facebook.react:hermes-android")
+//    } else {
+//        implementation jscFlavor
+//    }
+//}

@@ -19,7 +19,7 @@ import TextRecognition from "@react-native-ml-kit/text-recognition";
 import SQLite from "react-native-sqlite-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Icon from "@react-native-vector-icons/material-icons";
-import { useRoute, useFocusEffect } from "@react-navigation/native";
+import { useRoute } from "@react-navigation/native";
 
 // DB and helpers (same as yours)
 const DB_NAME = "AadharDB.db";
@@ -403,7 +403,8 @@ console.log("TimeStamp ", getIndianTimestamp());
       case "aadhaar_number":
         return /^\d{12}$/.test(value);
       case "mobile":
-        return /^\d{10}$/.test(value);
+        // return /^\d{10}$/.test(value);
+        return true;
       case "address":
         return value.trim().length > 0;
       case "dob":
@@ -419,7 +420,8 @@ console.log("TimeStamp ", getIndianTimestamp());
     const { name, aadhaar_number, mobile, address, dob } = form;
     if (!name.trim() || !/^[A-Za-z ]+$/.test(name)) return false;
     if (!aadhaar_number.match(/^\d{12}$/)) return false;
-    if (!mobile.match(/^\d{10}$/)) return false;
+    // if (!mobile.match(/^\d{10}$/)) return false;
+    if (mobile && !mobile.match(/^\d{10}$/)) return false;
     if (!address.trim()) return false;
     // if (dob && new Date(dob) > new Date()) return false;
     if (dob) {
@@ -456,7 +458,7 @@ console.log("TimeStamp ", getIndianTimestamp());
     { key: "aadhaar_number", label: "Aadhaar Number *", hint: "Must be exactly 12 digits." },
     { key: "dob", label: "Date of Birth", hint: "Select a valid date (not in future)." },
     { key: "gender", label: "Gender", hint: "Enter Male or Female." },
-    { key: "mobile", label: "Mobile Number *", hint: "Enter a valid 10-digit mobile number." },
+    { key: "mobile", label: "Mobile Number", hint: "Enter a valid 10-digit mobile number." },
     { key: "address", label: "Address *", hint: "Provide complete address details." },
   ];
 
@@ -467,76 +469,6 @@ console.log("TimeStamp ", getIndianTimestamp());
         <Text style={styles.heading}>
           {updateModeOn ? "✏️ Edit Aadhaar Record" : "🪪 Aadhaar Scanner"}
         </Text>
-
-        {/* {[
-          { key: "name", label: "Name *" },
-          { key: "aadhaar_number", label: "Aadhaar Number *" },
-          { key: "dob", label: "Date of Birth" },
-          { key: "gender", label: "Gender" },
-          { key: "mobile", label: "Mobile Number *" },
-          { key: "address", label: "Address *" },
-        ].map((f) => (
-          <View key={f.key} style={styles.fieldGroup}>
-            <Text>{f.label}</Text>
-            {f.key === "dob" ? (
-              <>
-                <TouchableOpacity
-                  style={[
-                    styles.input,
-                    {
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    },
-                  ]}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <Text>{form.dob || "Select Date"}</Text>
-                  <Icon name="calendar-today" size={20} color="#555" />
-                </TouchableOpacity>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={form.dob ? new Date(form.dob) : new Date()}
-                    mode="date"
-                    maximumDate={new Date()}
-                    display="spinner"
-                    onChange={(event, selectedDate) => {
-                      setShowDatePicker(false);
-                      if (selectedDate)
-                        setForm({
-                          ...form,
-                          dob: selectedDate.toISOString().split("T")[0],
-                        });
-                    }}
-                  />
-                )}
-              </>
-            ) : (
-              <TextInput
-                style={styles.input}
-                value={form[f.key]}
-                keyboardType={
-                  f.key === "mobile" || f.key === "aadhaar_number"
-                    ? "numeric"
-                    : "default"
-                }
-                maxLength={
-                  f.key === "mobile"
-                    ? 10
-                    : f.key === "aadhaar_number"
-                    ? 12
-                    : undefined
-                }
-                onChangeText={(t) => {
-                  if (f.key === "name") t = t.replace(/[^A-Za-z ]/g, "");
-                  if (f.key === "aadhaar_number") t = t.replace(/\D/g, "");
-                  setForm({ ...form, [f.key]: t });
-                }}
-                placeholder={`Enter ${f.label}`}
-              />
-            )}
-          </View>
-        ))} */}
 
         {fields.map((f) => (
           <View key={f.key} style={styles.fieldGroup}>
@@ -581,6 +513,7 @@ console.log("TimeStamp ", getIndianTimestamp());
               <TextInput
                 style={[
                   styles.input,
+                  f.key === "address" && {height: 100, textAlignVertical:"top"},
                   !isFieldValid(f.key, form[f.key]) && form[f.key] !== "" && styles.invalidInput,
                 ]}
                 value={form[f.key]}
@@ -596,6 +529,8 @@ console.log("TimeStamp ", getIndianTimestamp());
                       ? 12
                       : undefined
                 }
+                multiline={f.key ==="address"}
+                numberOfLines={4}
                 onChangeText={(t) => {
                   if (f.key === "name") t = t.replace(/[^A-Za-z ]/g, "");
                   if (f.key === "aadhaar_number" || f.key === "mobile")
@@ -674,15 +609,16 @@ console.log("TimeStamp ", getIndianTimestamp());
               </TouchableOpacity>
           </View>
           )}
-
-
+          
+            {/* Action Buttons */}
           <TouchableOpacity
             onPress={saveToDB}
             disabled={!validateInputs()}
             style={[
               styles.saveButton,
               {
-                backgroundColor: validateInputs() ? "#27ae60" : "#bdc3c7",
+                backgroundColor: validateInputs() ? "#27ae60" : "#d6dcdfff",
+                color:validateInputs()?"#fff":"#000000",
               },
             ]}
           >
@@ -691,11 +627,14 @@ console.log("TimeStamp ", getIndianTimestamp());
 
         {!updateModeOn && (
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#e74c3c",alignItems:"center" }]}
+            style={[styles.actionButton, { backgroundColor: "#e74c3c",alignItems:"center", justifyContent:"center" }]}
             onPress={clearAllFields}
           >
             {/* <Text style={styles.actionButtonText}>🧹 Clear All Fields</Text> */}
-            <Text style={[styles.actionButtonText,{color:"#fff"}]}>🔄️ Reset</Text>
+            <Text style={[styles.actionButtonText,{color:"#fff"}]}>
+              <Text>🔄️</Text>
+              <Text> Reset</Text>
+            </Text>
           </TouchableOpacity>
         )}
         </View>
@@ -707,7 +646,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#f4f6f8",
-    paddingTop: Platform.OS === "android" ? 35 : 0,
+    paddingTop: Platform.OS === "android" ? 2 : 0,
   },
   container: {
     paddingHorizontal: 18,
@@ -770,7 +709,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 12,
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 5,
     marginTop:10,
     elevation: 1,
     textAlign:'left'
@@ -784,10 +723,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 5,
+    marginTop:10
   },
   saveButtonText: {
-    color: "#fff",
     fontWeight: "bold",
     fontSize: 17,
   },
