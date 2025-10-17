@@ -139,9 +139,25 @@ function parseAadhaarText(fullText) {
     else if (yearMatch) result.dob = yearMatch[0];
   }
 
-  if (/male/i.test(cleanText)) result.gender = 'Male';
-  else if (/female/i.test(cleanText)) result.gender = 'Female';
+  // if (/male/i.test(cleanText)) result.gender = 'Male';
+  // else if (/female/i.test(cleanText)) result.gender = 'Female';
 
+// Take the line immediately after DOB as gender
+
+if (dobLine) {
+  const dobIndex = lines.indexOf(dobLine);
+  if (dobIndex !== -1 && lines[dobIndex + 1]) {
+    result.gender = lines[dobIndex + 1].trim();
+  }
+}
+// Override if MALE/FEMALE/TRANS found anywhere in OCR text
+
+const genderMatch = cleanText.match(/\b(MALE|FEMALE|TRANS)\b/i);
+if (genderMatch) {
+  result.gender = genderMatch[0].charAt(0).toUpperCase() + genderMatch[0].slice(1).toLowerCase();
+}
+
+  
   const mobileMatch = cleanText.match(/\b[6-9]\d{9}\b/);
   if (mobileMatch) result.mobile = mobileMatch[0];
 
@@ -480,6 +496,7 @@ export default function AadharScanner() {
       mobile: '',
       scanned_at: '',
     });
+    setHasScanned(false);
   }
 
   function fetchRecords() {

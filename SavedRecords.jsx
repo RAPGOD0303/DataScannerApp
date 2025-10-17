@@ -102,12 +102,12 @@ export default function SavedRecords() {
           for (let i = 0; i < results.rows.length; i++) temp.push(results.rows.item(i));
 
           setRecords(temp);
-          console.log("Inside SaveRecords ", records)
+          console.log("Inside SaveRecords ")
         },
         (tx, err) => console.error("Fetch error:", err)
       );
     });
-  }, [dbReady, db, records]);
+  }, [dbReady, db]);
 
 
   // useEffect(() => {
@@ -127,18 +127,21 @@ export default function SavedRecords() {
 
     const headers = ["ID", "Name", "Aadhaar Number", "DOB", "Gender","Mobile Number", "Address", "Scanned At"];
 
-    const csvRows = records.map((r) =>
-      [
+    const csvRows = records.map((r) =>{
+      const formattedDate = r.scanned_at;
+      console.log("Formatted Date", formattedDate)
+      return[
+        
         r.id,
         `"${r.name}"`,
-        r.aadhaar_number,
+        `="${r.aadhaar_number}"`,
         r.dob,
         r.gender,
         r.mobile,
         `"${r.address}"`,
-        `"${r.formattedDate}"`,
+        `"${formattedDate}"`,
       ].join(",")
-    );
+  });
 
     const csvString = [headers.join(","), ...csvRows].join("\n");
 
