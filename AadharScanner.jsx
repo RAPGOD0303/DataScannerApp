@@ -722,8 +722,8 @@ export default function AadharScanner() {
             style={[
               styles.saveButton,
               {
-                backgroundColor: validateInputs() ? '#27ae60' : '#d6dcdfff',
-                color: validateInputs() ? '#fff' : '#000000',
+                backgroundColor: validateInputs() ? '#27ae60' : '#d6dcdfff'
+                
               },
             ]}
           >
@@ -732,10 +732,12 @@ export default function AadharScanner() {
               <Icon
                 name="save"
                 size={22}
-                color="#2fa0f0ff"
+                color= {validateInputs() ? '#fff' : '#000'}
                 style={{ marginRight: 6 }}
               />
-              <Text style={styles.saveButtonText}>
+              <Text style={[styles.saveButtonText,
+                {color: validateInputs() ? '#fff' : '#000'},
+              ]}>
                 {updateModeOn ? 'Update Record' : 'Save Data'}
               </Text>
             </View>
